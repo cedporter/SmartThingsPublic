@@ -50,9 +50,11 @@ mappings {
 
 /* function handling the request for switches list */
 def listSwitches(){
+	String timeStamp = new Date();
 	def resp = []
+    resp << [time: timeStamp]
     switches.each {
-      resp << [name: it.displayName, value: it.currentValue("switch")]
+      resp << [name: it.displayName, value: it.currentValue("switch"), device: state[it.getId()]]
     }
     return resp
 }
@@ -60,14 +62,12 @@ def listSwitches(){
 /* Once app is installed, it calls initialize */
 def installed() {
 	log.debug "Installed with settings: ${settings}"
-
 	initialize()
 }
 
 
 def updated() {
 	log.debug "Updated with settings: ${settings}"
-
 	unsubscribe()
 	initialize()
 }
@@ -78,19 +78,43 @@ we'll want to hash this out more and devise a way to track time on for a longer 
 def initialize() {
     Date initialOn = new Date()
     Date initialOff = new Date()
+    /* Should execute daily at 0:01 */
+    schedule("0 0 12 1/1 * ? *", clearDailyUsage)
+    /* Should execute first day of the month at 0:01 */
+    schedule("0 0 12 1 1/1 ? *", clearMonthlyUsage)
+    /* Should execute first day of the year at 0:01 */
+    schedule("0 0 12 1 1 ? *", clearYearlyUsage)
 	subscribe(switches, "switch.on", switchDetectedHandler)
     subscribe(switches, "switch.off", switchDetectedHandler)
     switches.each {
     	log.debug "name: " + it.displayName
         log.debug "full name: " + it.id
-        state[it.id] = [lastOn: now(), lastOff: now()]
+        state[it.id] = [lastOn: now(), lastOff: now(), dayUsage: 0, monthUsage: 0, yearUsage: 0, lifetimeUsage: 0]
+        
     }
     
 }
 
+def clearDailyUsage() {
+	switches.each {
+    	state[it.id]['dayUsage'] = 0
+    }
+}
+
+def clearMonthlyUsage() {
+	switches.each {
+    	state[it.id]['monthUsage'] = 0
+    }
+}
+
+def clearYearlyUsage() {
+	switches.each {
+    	state[it.id]['yearUsage'] = 0
+    }
+}
 
 /* This handles actual switch event */
-def switchDetectedHandler(evt){
+def switchDetectedHandler(evt) {
 	log.debug "Switched: ${evt.descriptionText}"
     log.debug evt.deviceId
     if (evt.value == "on") {
@@ -101,6 +125,10 @@ def switchDetectedHandler(evt){
         state[evt.deviceId]['lastOff'] = now()
         log.debug evt.date
         def duration = (state[evt.deviceId]['lastOff'] - state[evt.deviceId]['lastOn']) / 1000
+        state[evt.deviceId]['dayUsage'] = state[evt.deviceId]['dayUsage'] + duration
+        state[evt.deviceId]['monthUsage'] = state[evt.deviceId]['monthUsage'] + duration
+        state[evt.deviceId]['yearUsage'] = state[evt.deviceId]['yearUsage'] + duration
+        state[evt.deviceId]['lifetimeUsage'] = state[evt.deviceId]['lifetimeUsage'] + duration
         log.debug "Time left on: ${duration}"
     }
     
