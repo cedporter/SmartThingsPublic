@@ -52,7 +52,7 @@ mappings {
 def listSwitches(){
 	String timeStamp = new Date();
 	def resp = []
-    resp << [time: timeStamp]
+    //resp << [time: timeStamp]
     switches.each {
       resp << [name: it.displayName, value: it.currentValue("switch"), device: state[it.getId()]]
     }
@@ -89,47 +89,67 @@ def initialize() {
     switches.each {
     	log.debug "name: " + it.displayName
         log.debug "full name: " + it.id
-        state[it.id] = [lastOn: now(), lastOff: now(), dayUsage: 0, monthUsage: 0, yearUsage: 0, lifetimeUsage: 0]
-        
+        state[it.id] = [lastOn: now(), 
+        	lastOff: now(), 
+            dimmerSetting: 100, 
+            lastOnTime: initialOn,
+            lastOffTime: initialOff]
     }
     
 }
 
-def clearDailyUsage() {
-	switches.each {
-    	state[it.id]['dayUsage'] = 0
-    }
-}
-
-def clearMonthlyUsage() {
-	switches.each {
-    	state[it.id]['monthUsage'] = 0
-    }
-}
-
-def clearYearlyUsage() {
-	switches.each {
-    	state[it.id]['yearUsage'] = 0
-    }
-}
-
 /* This handles actual switch event */
 def switchDetectedHandler(evt) {
+	String timeStamp = new Date();
 	log.debug "Switched: ${evt.descriptionText}"
     log.debug evt.deviceId
     if (evt.value == "on") {
     	state[evt.deviceId]['lastOn'] = now()
+        state[evt.deviceId]['lastOnTime'] = timeStamp
         log.debug "switch turned on!"
+        /*def params = [
+            uri: "https://energywebapp.herokuapp.com/switchevent",
+            body: [hubId: evt?.hub.id, deviceId: evt.displayName, name: evt.deviceId, timeOn: state[evt.deviceId]['lastOn']]
+		]
+        try {
+            httpPostJson(params) { resp ->
+                resp.headers.each {
+                    log.debug "${it.name} : ${it.value}"
+                }
+                log.debug "response contentType: ${resp.    contentType}"
+            }
+        } catch (e) {
+            log.debug "something went wrong: $e"
+        }*/
     } else if (evt.value == "off") {
         log.debug "switch turned off!"
         state[evt.deviceId]['lastOff'] = now()
+        state[evt.deviceId]['lastOffTime'] = timeStamp
         log.debug evt.date
         def duration = (state[evt.deviceId]['lastOff'] - state[evt.deviceId]['lastOn']) / 1000
-        state[evt.deviceId]['dayUsage'] = state[evt.deviceId]['dayUsage'] + duration
-        state[evt.deviceId]['monthUsage'] = state[evt.deviceId]['monthUsage'] + duration
-        state[evt.deviceId]['yearUsage'] = state[evt.deviceId]['yearUsage'] + duration
-        state[evt.deviceId]['lifetimeUsage'] = state[evt.deviceId]['lifetimeUsage'] + duration
+        def switchState = evt.getDevice().currentValue("level")
+        log.debug "Current level: ${switchState}"
         log.debug "Time left on: ${duration}"
+        def params = [
+            uri: "https://energywebapp.herokuapp.com/switchevent",
+            body: [hubId: evt?.hub.id, 
+            deviceName: evt.displayName, 
+            deviceId: evt.deviceId,
+            timeOn: state[evt.deviceId]['lastOnTime'], 
+            timeOff: state[evt.deviceId]['lastOffTime'], 
+            dimmerSetting: switchState, 
+            duration: duration]
+		]
+        try {
+            httpPostJson(params) { resp ->
+                resp.headers.each {
+                    log.debug "${it.name} : ${it.value}"
+                }
+                log.debug "response contentType: ${resp.    contentType}"
+            }
+        } catch (e) {
+            log.debug "something went wrong: $e"
+        }
     }
     
 }
